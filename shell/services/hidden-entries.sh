@@ -92,6 +92,13 @@ scan_dir() {
   done < <(find "$dir" -type f -name '*.desktop' -print0 2>/dev/null | sort -z)
 }
 
+# The upstream runtime registers its own Hermes launcher, and the packaged
+# desktop app supersedes it: hide that entry only while the package Omarchy
+# installed owns Hermes, so a Hermes set up some other way stays launchable.
+if omarchy-pkg-present hermes-desktop; then
+  printf '%s\n' hermes
+fi
+
 scan_dir "$HOME/.local/share/applications"
 
 IFS=":" read -ra data_dirs <<< "${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
