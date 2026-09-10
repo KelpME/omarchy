@@ -27,7 +27,7 @@ cat >"$user_apps/hermes.desktop" <<'SH'
 [Desktop Entry]
 Type=Application
 Name=Hermes
-Exec=/home/tmo/.local/bin/hermes desktop
+Exec=$HOME/.local/bin/hermes desktop
 SH
 
 # A genuinely hidden entry, to prove the scan still does its old job.
