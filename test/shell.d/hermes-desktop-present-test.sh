@@ -38,15 +38,17 @@ build_install() {
 # made counts as present.
 test_tmp=$(mktemp -d)
 trap 'rm -rf "$test_tmp"' EXIT
-build_install "$test_tmp/home"
-HOME="$test_tmp/home" present || fail "a complete default-home install is recognized"
+build_install "$test_tmp/home/.hermes"
+# HERMES_HOME emptied, so a developer whose shell exports it does not have
+# this case read their own install instead of the fixture.
+HOME="$test_tmp/home" HERMES_HOME= present || fail "a complete default-home install is recognized"
 pass "a complete default-home install is recognized"
 
 # A profile home flattens to the shared root above it, exactly as the
 # installer normalizes it: a complete install there is recognized, and the
 # profile directory itself is never inspected for a runtime.
 build_install "$test_tmp/shared"
-build_install "$test_tmp/empty-profiles" 0
+build_install "$test_tmp/profiles/ptah"
 HOME="$test_tmp" HERMES_HOME="$test_tmp/profiles/ptah" present &&
   fail "a runtime under the profile directory is not the shared root's install"
 HOME="$test_tmp" HERMES_HOME="$test_tmp/shared/profiles/ptah" present ||
@@ -54,7 +56,8 @@ HOME="$test_tmp" HERMES_HOME="$test_tmp/shared/profiles/ptah" present ||
 pass "a profile home is normalized to the shared root before checking"
 
 # The same tree found through HERMES_HOME without a profiles component.
-HOME="$test_tmp" HERMES_HOME="$test_tmp/home" present ||
+build_install "$test_tmp/custom"
+HOME="$test_tmp" HERMES_HOME="$test_tmp/custom" present ||
   fail "HERMES_HOME overrides the default home"
 pass "HERMES_HOME overrides the default home"
 
