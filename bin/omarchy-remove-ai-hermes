@@ -51,7 +51,8 @@ PY
 }
 
 # The first word of an entry's Exec, quoted or bare, is the command it
-# launches; an entry whose command is gone launches nothing.
+# launches: a path is checked where it points and a bare name on PATH, the
+# way the launcher would run it. An entry whose command is gone launches nothing.
 launcher_entry_runs() {
   local exec_line target
 
@@ -63,7 +64,12 @@ launcher_entry_runs() {
   else
     target=${target%%[[:space:]]*}
   fi
-  [[ -n $target && -e $target ]]
+  [[ -n $target ]] || return 1
+  if [[ $target == */* ]]; then
+    [[ -e $target ]]
+  else
+    omarchy-cmd-present "$target"
+  fi
 }
 
 # Removing an open SQLite WAL leaves a live writer on a deleted generation.

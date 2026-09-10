@@ -100,3 +100,20 @@ SH
 run_scan 0 >"$test_tmp/output"
 grep -qx hermes "$test_tmp/output" && fail "a quoted Exec target was not resolved"
 pass "a quoted Exec target resolves before the existence check"
+
+# An Exec naming a bare command is looked up on PATH, as the launcher would
+# run it: found, the entry works; gone, it is hidden like a dead path.
+printf '#!/bin/bash\nexit 0\n' >"$mock_bin/hermes-probe"
+chmod +x "$mock_bin/hermes-probe"
+cat >"$user_apps/hermes.desktop" <<'SH'
+[Desktop Entry]
+Type=Application
+Name=Hermes
+Exec=hermes-probe desktop
+SH
+run_scan 0 >"$test_tmp/output"
+grep -qx hermes "$test_tmp/output" && fail "a bare Exec command found on PATH was treated as dead"
+rm -f "$mock_bin/hermes-probe"
+run_scan 0 >"$test_tmp/output"
+grep -qx hermes "$test_tmp/output" || fail "a bare Exec command missing from PATH was treated as live"
+pass "a bare Exec command is resolved on PATH"

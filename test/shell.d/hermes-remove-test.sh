@@ -169,6 +169,20 @@ remove || fail "remove succeeds with a working launcher entry present"
   fail "a launcher entry whose command still exists survives removal"
 pass "removal leaves a launcher entry that still launches something"
 
+# An Exec naming a bare command is resolved on PATH, as the launcher resolves
+# it; one that resolves is a working entry, whoever wrote it.
+seed_install
+mkdir -p "$test_home/.local/share/applications"
+printf '#!/bin/bash\nexit 0\n' >"$mock_bin/my-hermes"
+chmod +x "$mock_bin/my-hermes"
+printf '[Desktop Entry]\nType=Application\nName=Hermes\nExec=my-hermes desktop\n' \
+  >"$test_home/.local/share/applications/hermes.desktop"
+remove || fail "remove succeeds with a launcher entry naming a command on PATH"
+[[ -f $test_home/.local/share/applications/hermes.desktop ]] ||
+  fail "a launcher entry naming a command found on PATH survives removal"
+rm -f "$mock_bin/my-hermes"
+pass "removal resolves a bare Exec command on PATH before judging the entry"
+
 # Removal also asks the installer to tear down a mise CLI the app superseded, so
 # a copy left from before the app took over does not linger once Hermes is gone.
 tr '\0' '\n' <"$test_tmp/installer-log" | grep -qx -- '--remove' ||
