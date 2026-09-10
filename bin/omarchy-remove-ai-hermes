@@ -51,8 +51,9 @@ PY
 }
 
 # The first word of an entry's Exec, quoted or bare, is the command it
-# launches: a path is checked where it points and a bare name on PATH, the
-# way the launcher would run it. An entry whose command is gone launches nothing.
+# launches: an absolute path is checked where it points and a bare name on
+# PATH, the way the launcher runs it. A relative path resolves against the
+# entry's own Path=, which is not read here, so it is taken as live.
 launcher_entry_runs() {
   local exec_line target
 
@@ -65,8 +66,10 @@ launcher_entry_runs() {
     target=${target%%[[:space:]]*}
   fi
   [[ -n $target ]] || return 1
-  if [[ $target == */* ]]; then
+  if [[ $target == /* ]]; then
     [[ -e $target ]]
+  elif [[ $target == */* ]]; then
+    return 0
   else
     omarchy-cmd-present "$target"
   fi

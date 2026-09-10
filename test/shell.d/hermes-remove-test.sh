@@ -183,6 +183,17 @@ remove || fail "remove succeeds with a launcher entry naming a command on PATH"
 rm -f "$mock_bin/my-hermes"
 pass "removal resolves a bare Exec command on PATH before judging the entry"
 
+# A relative Exec resolves against the entry's own Path=, which the remover
+# does not read, so the entry is never judged dead and never deleted.
+seed_install
+mkdir -p "$test_home/.local/share/applications"
+printf '[Desktop Entry]\nType=Application\nName=Hermes\nPath=%s\nExec=./launch desktop\n' "$test_home" \
+  >"$test_home/.local/share/applications/hermes.desktop"
+remove || fail "remove succeeds with a launcher entry using a relative command"
+[[ -f $test_home/.local/share/applications/hermes.desktop ]] ||
+  fail "a launcher entry with a relative command survives removal"
+pass "removal leaves a launcher entry whose command is relative to its own Path"
+
 # Removal also asks the installer to tear down a mise CLI the app superseded, so
 # a copy left from before the app took over does not linger once Hermes is gone.
 tr '\0' '\n' <"$test_tmp/installer-log" | grep -qx -- '--remove' ||

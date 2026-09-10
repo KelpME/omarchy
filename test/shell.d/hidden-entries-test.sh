@@ -117,3 +117,16 @@ rm -f "$mock_bin/hermes-probe"
 run_scan 0 >"$test_tmp/output"
 grep -qx hermes "$test_tmp/output" || fail "a bare Exec command missing from PATH was treated as live"
 pass "a bare Exec command is resolved on PATH"
+
+# A relative Exec resolves against the entry's own Path=, which the scan does
+# not read, so it is never judged dead.
+cat >"$user_apps/hermes.desktop" <<'SH'
+[Desktop Entry]
+Type=Application
+Name=Hermes
+Path=/nowhere
+Exec=./launch desktop
+SH
+run_scan 0 >"$test_tmp/output"
+grep -qx hermes "$test_tmp/output" && fail "a relative Exec command was judged from the wrong directory"
+pass "a relative Exec command is left to the launcher"
