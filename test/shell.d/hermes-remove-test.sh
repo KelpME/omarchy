@@ -85,7 +85,7 @@ remove() {
     OMARCHY_TEST_INSTALLER_STATUS="${OMARCHY_TEST_INSTALLER_STATUS:-0}" \
     OMARCHY_TEST_SYSTEMCTL_LOG="$test_tmp/systemctl-log" \
     OMARCHY_TEST_GUM_LOG="$test_tmp/gum-log" \
-    HOME="$test_home" PATH="$mock_bin:$PATH" \
+    HOME="$test_home" PATH="$mock_bin:$ROOT/bin:$PATH" \
     bash "$test_tmp/remover" </dev/null >"$test_tmp/output" 2>&1
 }
 
@@ -100,7 +100,7 @@ remove_tty() {
     OMARCHY_TEST_SYSTEMCTL_LOG="$test_tmp/systemctl-log" \
     OMARCHY_TEST_GUM_LOG="$test_tmp/gum-log" \
     OMARCHY_TEST_GUM_STATUS="${OMARCHY_TEST_GUM_STATUS:-1}" \
-    HOME="$test_home" PATH="$mock_bin:$PATH" \
+    HOME="$test_home" PATH="$mock_bin:$ROOT/bin:$PATH" \
     script -qec "bash '$test_tmp/remover'" /dev/null >"$test_tmp/output" 2>&1
 }
 

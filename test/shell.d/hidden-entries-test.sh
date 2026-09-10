@@ -50,7 +50,7 @@ run_scan() {
   # ~/.nix-profile answers 1; the shell reads its stdout, not its status.
   OMARCHY_TEST_DESKTOP_INSTALLED="${1:-0}" \
     HOME="$test_tmp/home" \
-    PATH="$mock_bin:$PATH" \
+    PATH="$mock_bin:$ROOT/bin:$PATH" \
     bash "$ROOT/shell/services/hidden-entries.sh" || true
 }
 
