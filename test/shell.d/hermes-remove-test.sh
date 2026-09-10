@@ -142,6 +142,33 @@ pass "removal keeps the user's data unasked when there is no terminal"
 [[ ! -e $test_home/.local/bin/hermes ]] || fail "the app's own hermes command is removed"
 pass "removal takes the command the app installed"
 
+# The runtime registers a launcher entry pointing at the wrapper the app wrote,
+# and once that wrapper is gone the entry launches nothing. The launcher only
+# re-reads its hidden entries when a .desktop file changes, so a dead entry left
+# in place would stay on offer until something else changed one.
+seed_install
+mkdir -p "$test_home/.local/share/applications"
+printf '%s\n' "#!/bin/bash" "exec $test_home/.hermes/hermes-agent/venv/bin/hermes \"\$@\"" \
+  >"$test_home/.local/bin/hermes"
+printf '[Desktop Entry]\nType=Application\nName=Hermes\nExec="%s" desktop\n' "$test_home/.local/bin/hermes" \
+  >"$test_home/.local/share/applications/hermes.desktop"
+remove || fail "remove succeeds with the runtime's launcher entry present"
+[[ ! -e $test_home/.local/share/applications/hermes.desktop ]] ||
+  fail "the launcher entry pointing at the removed command is deleted"
+pass "removal deletes the launcher entry the runtime registered"
+
+# An entry that still launches something is not the runtime's, and survives.
+seed_install
+mkdir -p "$test_home/.local/share/applications"
+printf '#!/bin/bash\nexit 0\n' >"$test_home/my-hermes"
+chmod +x "$test_home/my-hermes"
+printf '[Desktop Entry]\nType=Application\nName=Hermes\nExec=%s desktop\n' "$test_home/my-hermes" \
+  >"$test_home/.local/share/applications/hermes.desktop"
+remove || fail "remove succeeds with a working launcher entry present"
+[[ -f $test_home/.local/share/applications/hermes.desktop ]] ||
+  fail "a launcher entry whose command still exists survives removal"
+pass "removal leaves a launcher entry that still launches something"
+
 # Removal also asks the installer to tear down a mise CLI the app superseded, so
 # a copy left from before the app took over does not linger once Hermes is gone.
 tr '\0' '\n' <"$test_tmp/installer-log" | grep -qx -- '--remove' ||

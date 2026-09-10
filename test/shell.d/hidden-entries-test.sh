@@ -70,11 +70,11 @@ grep -qx hermes "$test_tmp/output" && fail "the Hermes launcher stays hidden wit
 grep -qx hidden-helper "$test_tmp/output" || fail "a Hidden=true entry is still hidden without the package"
 pass "a Hermes installed without the package stays launchable"
 
-# Package removed: the remover tears down the runtime and the CLI wrappers but
-# leaves the launcher entry behind. An entry whose Exec target is gone cannot
-# launch anything, so it goes back to being hidden instead of surfacing as
-# search noise -- without touching a working standalone install, whose target
-# still exists.
+# Target gone: a runtime deleted by hand, or a removal that never reached the
+# entry, leaves it pointing at nothing. An entry whose Exec target is gone
+# cannot launch anything, so it goes back to being hidden instead of surfacing
+# as search noise -- without touching a working standalone install, whose
+# target still exists.
 run_scan 0 >"$test_tmp/output"
 grep -qx hermes "$test_tmp/output" && fail "the removal probe ran against a working install"
 pass "a launcher whose target exists is never treated as removed"
