@@ -93,10 +93,24 @@ scan_dir() {
 }
 
 # The upstream runtime registers its own Hermes launcher, and the packaged
-# desktop app supersedes it: hide that entry only while the package Omarchy
-# installed owns Hermes, so a Hermes set up some other way stays launchable.
+# desktop app supersedes it while the package Omarchy installed owns Hermes.
+# The remover tears the runtime and its CLI wrappers down but leaves the
+# runtime's launcher entry behind, so an entry whose Exec target is gone stays
+# hidden too: a launcher that cannot launch is only search noise.
 if omarchy-pkg-present hermes-desktop; then
   printf '%s\n' hermes
+elif [[ -f $HOME/.local/share/applications/hermes.desktop ]]; then
+  exec_line=$(grep -m1 '^Exec=' "$HOME/.local/share/applications/hermes.desktop" 2>/dev/null) || true
+  target=${exec_line#Exec=}
+  if [[ $target == \"*\"* ]]; then
+    target=${target#\"}
+    target=${target%%\"*}
+  else
+    target=${target%%[[:space:]]*}
+  fi
+  if [[ -z $target || ! -e $target ]]; then
+    printf '%s\n' hermes
+  fi
 fi
 
 scan_dir "$HOME/.local/share/applications"

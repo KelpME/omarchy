@@ -22,13 +22,19 @@ cat >"$mock_bin/omarchy-pkg-present" <<'SH'
 [[ $1 == "hermes-desktop" && ${OMARCHY_TEST_DESKTOP_INSTALLED:-0} == "1" ]]
 SH
 
-# The upstream runtime's own launcher entry, as its install writes it.
-cat >"$user_apps/hermes.desktop" <<'SH'
+# The upstream runtime's own launcher entry, as its install writes it. The
+# Exec path is resolved at write time by the real installer, so the fixture
+# writes the throwaway home's absolute path the same way -- and the runtime
+# the entry points at.
+cat >"$user_apps/hermes.desktop" <<SH
 [Desktop Entry]
 Type=Application
 Name=Hermes
-Exec=$HOME/.local/bin/hermes desktop
+Exec=$test_tmp/home/.local/bin/hermes desktop
 SH
+mkdir -p "$test_tmp/home/.local/bin"
+: >"$test_tmp/home/.local/bin/hermes"
+chmod +x "$test_tmp/home/.local/bin/hermes"
 
 # A genuinely hidden entry, to prove the scan still does its old job.
 cat >"$user_apps/hidden-helper.desktop" <<'SH'
@@ -63,3 +69,34 @@ run_scan 0 >"$test_tmp/output"
 grep -qx hermes "$test_tmp/output" && fail "the Hermes launcher stays hidden without the package"
 grep -qx hidden-helper "$test_tmp/output" || fail "a Hidden=true entry is still hidden without the package"
 pass "a Hermes installed without the package stays launchable"
+
+# Package removed: the remover tears down the runtime and the CLI wrappers but
+# leaves the launcher entry behind. An entry whose Exec target is gone cannot
+# launch anything, so it goes back to being hidden instead of surfacing as
+# search noise -- without touching a working standalone install, whose target
+# still exists.
+run_scan 0 >"$test_tmp/output"
+grep -qx hermes "$test_tmp/output" && fail "the removal probe ran against a working install"
+pass "a launcher whose target exists is never treated as removed"
+rm -f "$test_tmp/home/.local/bin/hermes"
+run_scan 0 >"$test_tmp/output"
+grep -qx hermes "$test_tmp/output" || fail "the launcher survives with its Exec target removed"
+grep -qx hidden-helper "$test_tmp/output" || fail "a Hidden=true entry is still hidden after Hermes removal"
+pass "a launcher left behind by removal is hidden again"
+
+# An entry whose Exec quotes its path resolves the quoted target.
+# The spec quotes only the executable: the binary up to the closing quote,
+# arguments after it. The upstream installer writes exactly this shape when
+# the home path contains spaces. The removal case above deleted the binary,
+# so the runtime comes back first.
+: >"$test_tmp/home/.local/bin/hermes"
+chmod +x "$test_tmp/home/.local/bin/hermes"
+cat >"$user_apps/hermes.desktop" <<SH
+[Desktop Entry]
+Type=Application
+Name=Hermes
+Exec="$test_tmp/home/.local/bin/hermes" desktop
+SH
+run_scan 0 >"$test_tmp/output"
+grep -qx hermes "$test_tmp/output" && fail "a quoted Exec target was not resolved"
+pass "a quoted Exec target resolves before the existence check"
