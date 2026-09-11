@@ -130,3 +130,18 @@ SH
 run_scan 0 >"$test_tmp/output"
 grep -qx hermes "$test_tmp/output" && fail "a relative Exec command was judged from the wrong directory"
 pass "a relative Exec command is left to the launcher"
+
+# A desktop-entry escape in the command, \s for a space, is decoded by the
+# launcher and not by the scan, so such an entry is never judged dead.
+mkdir -p "$test_tmp/home/Hermes Desktop/bin"
+: >"$test_tmp/home/Hermes Desktop/bin/hermes"
+chmod +x "$test_tmp/home/Hermes Desktop/bin/hermes"
+cat >"$user_apps/hermes.desktop" <<SH
+[Desktop Entry]
+Type=Application
+Name=Hermes
+Exec="$test_tmp/home/Hermes\sDesktop/bin/hermes" desktop
+SH
+run_scan 0 >"$test_tmp/output"
+grep -qx hermes "$test_tmp/output" && fail "an escaped Exec path was judged without decoding it"
+pass "an escaped Exec path is left to the launcher"

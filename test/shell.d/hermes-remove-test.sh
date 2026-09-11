@@ -194,6 +194,19 @@ remove || fail "remove succeeds with a launcher entry using a relative command"
   fail "a launcher entry with a relative command survives removal"
 pass "removal leaves a launcher entry whose command is relative to its own Path"
 
+# A desktop-entry escape in the command, \s for a space, is decoded by the
+# launcher and not by the remover, so such an entry is never judged dead.
+seed_install
+mkdir -p "$test_home/.local/share/applications" "$test_home/Hermes Desktop/bin"
+: >"$test_home/Hermes Desktop/bin/hermes"
+chmod +x "$test_home/Hermes Desktop/bin/hermes"
+printf '[Desktop Entry]\nType=Application\nName=Hermes\nExec="%s/Hermes\\sDesktop/bin/hermes" desktop\n' "$test_home" \
+  >"$test_home/.local/share/applications/hermes.desktop"
+remove || fail "remove succeeds with a launcher entry using an escaped path"
+[[ -f $test_home/.local/share/applications/hermes.desktop ]] ||
+  fail "a launcher entry whose command carries a desktop-entry escape survives removal"
+pass "removal leaves a launcher entry whose command it cannot decode"
+
 # Removal also asks the installer to tear down a mise CLI the app superseded, so
 # a copy left from before the app took over does not linger once Hermes is gone.
 tr '\0' '\n' <"$test_tmp/installer-log" | grep -qx -- '--remove' ||
