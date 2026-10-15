@@ -133,9 +133,8 @@ PY
 
 # The first word of an entry's Exec, quoted or bare, is the command it
 # launches: an absolute path is checked where it points and a bare name on
-# PATH, the way the launcher runs it. A relative path resolves against the
-# entry's own Path= and an escape such as \s is decoded by the launcher;
-# neither is read here, so both are taken as live.
+# PATH, the way the launcher runs it. A relative path, or an escape this
+# cannot decode, is left unjudged and the entry kept.
 launcher_entry_runs() {
   local exec_line target
 
@@ -193,8 +192,6 @@ launcher_entry_runs() {
     omarchy-cmd-present "$target"
   fi
 }
-
-# Removing an open SQLite WAL leaves a live writer on a deleted generation.
 
 hermes_holders check
 

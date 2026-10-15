@@ -87,9 +87,8 @@ scan_dir() {
 
 # The first word of an entry's Exec, quoted or bare, is the command it
 # launches: an absolute path is checked where it points and a bare name on
-# PATH, the way the launcher runs it. A relative path resolves against the
-# entry's own Path= and an escape such as \s is decoded by the launcher;
-# neither is read here, so both are taken as live.
+# PATH, the way the launcher runs it. A relative path is taken as live; an
+# escape this cannot decode is not, so the ID is hidden.
 exec_target_exists() {
   local target=${1#Exec=}
 
