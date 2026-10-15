@@ -10,17 +10,64 @@ set -euo pipefail
 
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/base-test.sh"
 
-test_tmp=$(mktemp -d)
-trap 'rm -rf "$test_tmp"' EXIT
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+export LC_ALL=C
 
-mock_bin="$test_tmp/bin"
-user_apps="$test_tmp/home/.local/share/applications"
+# The Hermes cases judge dead Exec targets, and the scan looks a bare
+# command up on PATH; both go through this stub, which reports the packaged
+# desktop app installed only when the case says so.
+mock_bin="$scratch/bin"
+user_apps="$scratch/home/.local/share/applications"
 mkdir -p "$mock_bin" "$user_apps"
-
 cat >"$mock_bin/omarchy-pkg-present" <<'SH'
 #!/bin/bash
 [[ $1 == "hermes-desktop" && ${OMARCHY_TEST_DESKTOP_INSTALLED:-0} == "1" ]]
 SH
+chmod +x "$mock_bin"/*
+export PATH="$mock_bin:$ROOT/bin:$PATH"
+
+entry() {
+  local path=$1
+  mkdir -p "${path%/*}"
+  printf '[Desktop Entry]\n%s\n' "$2" > "$path"
+}
+
+export HOME="$scratch/home" XDG_DATA_DIRS="$scratch/system:$scratch/ven[dor]*"
+# A caller's XDG_DATA_HOME would steal the user-applications dir from under
+# the scan; every case that wants one passes it explicitly.
+unset XDG_DATA_HOME
+
+entry "$HOME/.local/share/applications/override.desktop" 'Name=Visible override'
+entry "$HOME/.local/share/applications/kde-foo.desktop" 'Name=Visible nested override'
+entry "$scratch/system/applications/kde/foo.desktop" 'Hidden=true'
+entry "$scratch/system/applications/override.desktop" 'Hidden=true'
+entry "$HOME/.local/share/applications/user-hidden.desktop" 'Hidden=true'
+entry "$scratch/system/applications/user-hidden.desktop" 'Name=Visible system entry'
+entry "$scratch/system/applications/nested/space name.desktop" 'NoDisplay=true'
+entry "$scratch/system/applications/nested/deeper/app.desktop" 'OnlyShowIn=GNOME;'
+entry "$scratch/system/applications/visible.desktop" 'OnlyShowIn=Hyprland;GNOME;'
+entry "$scratch/system/applications/not-hyprland.desktop" 'NotShowIn=Hyprland;'
+entry "$scratch/system/applications/other-section.desktop" $'Name=Visible\n[Desktop Action Hidden]\nHidden=true'
+entry "$scratch/system/applications/quote\" app.desktop" 'NoDisplay=true'
+entry "$scratch/ven[dor]*/applications/vendor.desktop" 'Hidden=true'
+entry "$HOME/.nix-profile/share/applications/nix.desktop" 'NoDisplay=true'
+
+# The exact-output scan runs before any Hermes fixture exists, so the set of
+# hidden IDs is exactly the fixture's and nothing of ours rides along.
+actual=$(bash "$ROOT/shell/services/hidden-entries.sh" 'Hyprland:Omarchy')
+expected=$'user-hidden\nnested-deeper-app\nnested-space name\nnot-hyprland\nquote" app\nvendor\nnix'
+[[ $actual == "$expected" ]] || fail "hidden entries changed IDs, directory precedence, or desktop visibility: $actual"
+pass "hidden entries preserve nested IDs, unusual filenames, overrides, and desktop filters"
+
+run_scan() {
+  # The script's exit code is the last scan_dir's, and an absent
+  # ~/.nix-profile answers 1; the shell reads its stdout, not its status.
+  # A second argument drops a custom XDG_DATA_HOME into the scan's world.
+  OMARCHY_TEST_DESKTOP_INSTALLED="${1:-0}" \
+    XDG_DATA_HOME="${2-}" \
+    bash "$ROOT/shell/services/hidden-entries.sh" 'Hyprland:Omarchy' || true
+}
 
 # The upstream runtime's own launcher entry, as its install writes it. The
 # Exec path is resolved at write time by the real installer, so the fixture
@@ -30,11 +77,11 @@ cat >"$user_apps/hermes.desktop" <<SH
 [Desktop Entry]
 Type=Application
 Name=Hermes
-Exec=$test_tmp/home/.local/bin/hermes desktop
+Exec=$scratch/home/.local/bin/hermes desktop
 SH
-mkdir -p "$test_tmp/home/.local/bin"
-: >"$test_tmp/home/.local/bin/hermes"
-chmod +x "$test_tmp/home/.local/bin/hermes"
+mkdir -p "$scratch/home/.local/bin"
+: >"$scratch/home/.local/bin/hermes"
+chmod +x "$scratch/home/.local/bin/hermes"
 
 # A genuinely hidden entry, to prove the scan still does its old job.
 cat >"$user_apps/hidden-helper.desktop" <<'SH'
@@ -45,31 +92,18 @@ Exec=/usr/bin/true
 Hidden=true
 SH
 
-run_scan() {
-  # The script's exit code is the last scan_dir's, and an absent
-  # ~/.nix-profile answers 1; the shell reads its stdout, not its status.
-  # A second argument drops a custom XDG_DATA_HOME into the scan's world.
-  OMARCHY_TEST_DESKTOP_INSTALLED="${1:-0}" \
-    HOME="$test_tmp/home" \
-    PATH="$mock_bin:$ROOT/bin:$PATH" \
-    XDG_DATA_HOME="${2-}" \
-    bash "$ROOT/shell/services/hidden-entries.sh" || true
-}
-
-chmod +x "$mock_bin"/*
-
 # Package present: the packaged app owns Hermes, so the upstream launcher's
 # entry goes the way of every other superseded entry.
-run_scan 1 >"$test_tmp/output"
-grep -qx hermes "$test_tmp/output" || fail "the Hermes launcher is hidden while the package owns Hermes"
-grep -qx hidden-helper "$test_tmp/output" || fail "a Hidden=true entry is still hidden"
+run_scan 1 >"$scratch/output"
+grep -qx hermes "$scratch/output" || fail "the Hermes launcher is hidden while the package owns Hermes"
+grep -qx hidden-helper "$scratch/output" || fail "a Hidden=true entry is still hidden"
 pass "the Hermes launcher is hidden while the packaged app owns Hermes"
 
 # Package absent: the runtime's launcher is the only Hermes launcher there is,
 # and hiding it would leave the desktop app unreachable from search.
-run_scan 0 >"$test_tmp/output"
-grep -qx hermes "$test_tmp/output" && fail "the Hermes launcher stays hidden without the package"
-grep -qx hidden-helper "$test_tmp/output" || fail "a Hidden=true entry is still hidden without the package"
+run_scan 0 >"$scratch/output"
+grep -qx hermes "$scratch/output" && fail "the Hermes launcher stays hidden without the package"
+grep -qx hidden-helper "$scratch/output" || fail "a Hidden=true entry is still hidden without the package"
 pass "a Hermes installed without the package stays launchable"
 
 # Target gone: a runtime deleted by hand, or a removal that never reached the
@@ -77,13 +111,13 @@ pass "a Hermes installed without the package stays launchable"
 # cannot launch anything, so it goes back to being hidden instead of surfacing
 # as search noise -- without touching a working standalone install, whose
 # target still exists.
-run_scan 0 >"$test_tmp/output"
-grep -qx hermes "$test_tmp/output" && fail "the removal probe ran against a working install"
+run_scan 0 >"$scratch/output"
+grep -qx hermes "$scratch/output" && fail "the removal probe ran against a working install"
 pass "a launcher whose target exists is never treated as removed"
-rm -f "$test_tmp/home/.local/bin/hermes"
-run_scan 0 >"$test_tmp/output"
-grep -qx hermes "$test_tmp/output" || fail "the launcher survives with its Exec target removed"
-grep -qx hidden-helper "$test_tmp/output" || fail "a Hidden=true entry is still hidden after Hermes removal"
+rm -f "$scratch/home/.local/bin/hermes"
+run_scan 0 >"$scratch/output"
+grep -qx hermes "$scratch/output" || fail "the launcher survives with its Exec target removed"
+grep -qx hidden-helper "$scratch/output" || fail "a Hidden=true entry is still hidden after Hermes removal"
 pass "a launcher left behind by removal is hidden again"
 
 # An entry whose Exec quotes its path resolves the quoted target.
@@ -91,16 +125,16 @@ pass "a launcher left behind by removal is hidden again"
 # arguments after it. The upstream installer writes exactly this shape when
 # the home path contains spaces. The removal case above deleted the binary,
 # so the runtime comes back first.
-: >"$test_tmp/home/.local/bin/hermes"
-chmod +x "$test_tmp/home/.local/bin/hermes"
+: >"$scratch/home/.local/bin/hermes"
+chmod +x "$scratch/home/.local/bin/hermes"
 cat >"$user_apps/hermes.desktop" <<SH
 [Desktop Entry]
 Type=Application
 Name=Hermes
-Exec="$test_tmp/home/.local/bin/hermes" desktop
+Exec="$scratch/home/.local/bin/hermes" desktop
 SH
-run_scan 0 >"$test_tmp/output"
-grep -qx hermes "$test_tmp/output" && fail "a quoted Exec target was not resolved"
+run_scan 0 >"$scratch/output"
+grep -qx hermes "$scratch/output" && fail "a quoted Exec target was not resolved"
 pass "a quoted Exec target resolves before the existence check"
 
 # An Exec naming a bare command is looked up on PATH, as the launcher would
@@ -113,11 +147,11 @@ Type=Application
 Name=Hermes
 Exec=hermes-probe desktop
 SH
-run_scan 0 >"$test_tmp/output"
-grep -qx hermes "$test_tmp/output" && fail "a bare Exec command found on PATH was treated as dead"
+run_scan 0 >"$scratch/output"
+grep -qx hermes "$scratch/output" && fail "a bare Exec command found on PATH was treated as dead"
 rm -f "$mock_bin/hermes-probe"
-run_scan 0 >"$test_tmp/output"
-grep -qx hermes "$test_tmp/output" || fail "a bare Exec command missing from PATH was treated as live"
+run_scan 0 >"$scratch/output"
+grep -qx hermes "$scratch/output" || fail "a bare Exec command missing from PATH was treated as live"
 pass "a bare Exec command is resolved on PATH"
 
 # A relative Exec resolves against the entry's own Path=, which the scan does
@@ -129,47 +163,47 @@ Name=Hermes
 Path=/nowhere
 Exec=./launch desktop
 SH
-run_scan 0 >"$test_tmp/output"
-grep -qx hermes "$test_tmp/output" && fail "a relative Exec command was judged from the wrong directory"
+run_scan 0 >"$scratch/output"
+grep -qx hermes "$scratch/output" && fail "a relative Exec command was judged from the wrong directory"
 pass "a relative Exec command is left to the launcher"
 
 # A desktop-entry escape in the command, \s for a space, is decoded by the
 # launcher and not by the scan, so such an entry is never judged dead.
-mkdir -p "$test_tmp/home/Hermes Desktop/bin"
-: >"$test_tmp/home/Hermes Desktop/bin/hermes"
-chmod +x "$test_tmp/home/Hermes Desktop/bin/hermes"
+mkdir -p "$scratch/home/Hermes Desktop/bin"
+: >"$scratch/home/Hermes Desktop/bin/hermes"
+chmod +x "$scratch/home/Hermes Desktop/bin/hermes"
 cat >"$user_apps/hermes.desktop" <<SH
 [Desktop Entry]
 Type=Application
 Name=Hermes
-Exec="$test_tmp/home/Hermes\sDesktop/bin/hermes" desktop
+Exec="$scratch/home/Hermes\sDesktop/bin/hermes" desktop
 SH
-run_scan 0 >"$test_tmp/output"
-grep -qx hermes "$test_tmp/output" && fail "an escaped Exec path was judged without decoding it"
+run_scan 0 >"$scratch/output"
+grep -qx hermes "$scratch/output" && fail "an escaped Exec path was judged without decoding it"
 pass "an escaped Exec path resolves to its decoded target"
 
 # The decode cuts both ways: once the decoded target is gone, the entry is
 # judged dead like any other, and goes back to being hidden.
-rm -rf "$test_tmp/home/Hermes Desktop"
-run_scan 0 >"$test_tmp/output"
-grep -qx hermes "$test_tmp/output" || fail "an escaped Exec path was left live after its target went"
+rm -rf "$scratch/home/Hermes Desktop"
+run_scan 0 >"$scratch/output"
+grep -qx hermes "$scratch/output" || fail "an escaped Exec path was left live after its target went"
 pass "an escaped Exec path is judged dead once its target is gone"
 
 # A backslash inside the quoted token also escapes for the token layer the
 # launcher applies on top of the string escapes: \\$ is a literal dollar
 # sign where the command runs, and the scan resolves the path GLib's launch
 # parser resolves -- live while it exists, hidden once it is gone.
-mkdir -p "$test_tmp/home/Hermes\$Desktop/bin"
-: >"$test_tmp/home/Hermes\$Desktop/bin/hermes"
-chmod +x "$test_tmp/home/Hermes\$Desktop/bin/hermes"
-printf '[Desktop Entry]\nType=Application\nName=Hermes\nExec="%s/Hermes\\\\$Desktop/bin/hermes" desktop\n' "$test_tmp/home" \
+mkdir -p "$scratch/home/Hermes\$Desktop/bin"
+: >"$scratch/home/Hermes\$Desktop/bin/hermes"
+chmod +x "$scratch/home/Hermes\$Desktop/bin/hermes"
+printf '[Desktop Entry]\nType=Application\nName=Hermes\nExec="%s/Hermes\\\\$Desktop/bin/hermes" desktop\n' "$scratch/home" \
   >"$user_apps/hermes.desktop"
-run_scan 0 >"$test_tmp/output"
-grep -qx hermes "$test_tmp/output" && fail "a quoted token escape was judged without decoding it"
+run_scan 0 >"$scratch/output"
+grep -qx hermes "$scratch/output" && fail "a quoted token escape was judged without decoding it"
 pass "a backslash-escaped dollar inside a quoted Exec resolves to its literal path"
-rm -rf "$test_tmp/home/Hermes\$Desktop"
-run_scan 0 >"$test_tmp/output"
-grep -qx hermes "$test_tmp/output" || fail "a quoted token escape was left live after its target went"
+rm -rf "$scratch/home/Hermes\$Desktop"
+run_scan 0 >"$scratch/output"
+grep -qx hermes "$scratch/output" || fail "a quoted token escape was left live after its target went"
 pass "a backslash-escaped dollar inside a quoted Exec is judged dead once its target is gone"
 
 # An escape the decoder does not know leaves the command unreadable. What
@@ -181,8 +215,8 @@ Type=Application
 Name=Hermes
 Exec="/home/u/Hermes\aDesktop/bin/hermes" desktop
 SH
-run_scan 0 >"$test_tmp/output"
-grep -qx hermes "$test_tmp/output" || fail "an entry with an unknown escape was left visible"
+run_scan 0 >"$scratch/output"
+grep -qx hermes "$scratch/output" || fail "an entry with an unknown escape was left visible"
 [[ -f $user_apps/hermes.desktop ]] || fail "the scan removed an entry it could not read"
 pass "an entry with an unknown escape is hidden but left on disk"
 
@@ -190,13 +224,13 @@ pass "an entry with an unknown escape is hidden but left on disk"
 # the scan reads it there, and a dead one is hidden just the same. The target
 # is a path nothing in this test creates, so the entry is judged dead.
 rm -f "$user_apps/hermes.desktop"
-mkdir -p "$test_tmp/xdg/applications"
-cat >"$test_tmp/xdg/applications/hermes.desktop" <<SH
+mkdir -p "$scratch/xdg/applications"
+cat >"$scratch/xdg/applications/hermes.desktop" <<SH
 [Desktop Entry]
 Type=Application
 Name=Hermes
-Exec=$test_tmp/home/gone/bin/hermes desktop
+Exec=$scratch/home/gone/bin/hermes desktop
 SH
-run_scan 0 "$test_tmp/xdg" >"$test_tmp/output"
-grep -qx hermes "$test_tmp/output" || fail "a dead entry under a custom XDG_DATA_HOME was missed"
+run_scan 0 "$scratch/xdg" >"$scratch/output"
+grep -qx hermes "$scratch/output" || fail "a dead entry under a custom XDG_DATA_HOME was missed"
 pass "the hermes.desktop under a custom XDG_DATA_HOME is scanned"
